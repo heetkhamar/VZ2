@@ -13,6 +13,8 @@ Length       : m
 Time         : s
 """
 
+import numpy as np
+
 # ---------------------------------------------------------------------------
 # Tin bath (Zinnbad) – pure liquid tin above 231.93 °C
 # ---------------------------------------------------------------------------
@@ -66,7 +68,7 @@ T_strip_in = T_ambient     # °C – strip temperature just before entering the 
 # ---------------------------------------------------------------------------
 delay_heating     = 120.0  # s – inductive heater → bath (thermal lag in the system)
 delay_band        = 5.0   # s – strip-heat calculation → bath integration
-delay_water_cool  = dealy_heating  # s – water cooling → bath
+delay_water_cool  = delay_heating  # s – water cooling → bath
 delay_airknife    = 0.0   # s – air-knife cooling → bath (instantaneous)
 
 # ---------------------------------------------------------------------------
@@ -121,6 +123,52 @@ heating_fraction_default = 0.75
 t_start = 0.0          # s
 t_end   = 3600.0       # s  (default: 1 hour)
 dt      = 1.0          # s  – integration time step
+
+# ---------------------------------------------------------------------------
+# Heating schedule  (Heizleistungs-Zeitplan)
+# ---------------------------------------------------------------------------
+# Instead of a constant fraction, the inductive heater follows a time-varying
+# schedule defined as an array of fractions [0..1], one value per time step.
+#
+# generate_heating_schedule() builds the array for a given simulation window.
+# The schedule is piecewise-constant: power changes every `step_duration_s`
+# seconds and is held flat within each segment (realistic for PLC setpoints).
+#
+# Parameters you can tune:
+heating_schedule_min           = 0.40   # minimum heater fraction (40 % of P_max)
+heating_schedule_max           = 1.00   # maximum heater fraction (100 % of P_max)
+heating_schedule_step_duration = 300    # s – how often the power level changes (5 min)
+heating_schedule_seed          = 42     # random seed for reproducibility
+
+
+def generate_heating_schedule(n_steps: int,
+                               step_duration_s: int  = None,
+                               frac_min: float       = None,
+                               frac_max: float       = None,
+                               seed: int             = None) -> np.ndarray:
+    """
+    Build a piecewise-constant random heating-fraction schedule.
+
+    Returns an array of length `n_steps` with values in [frac_min, frac_max].
+    Each segment lasts `step_duration_s` time steps before changing.
+    """
+    seg_dur  = step_duration_s if step_duration_s is not None else heating_schedule_step_duration
+    lo       = frac_min        if frac_min        is not None else heating_schedule_min
+    hi       = frac_max        if frac_max        is not None else heating_schedule_max
+    rng      = np.random.default_rng(seed if seed is not None else heating_schedule_seed)
+
+    n_segments  = int(np.ceil(n_steps / seg_dur))
+    seg_values  = rng.uniform(lo, hi, size=n_segments)
+
+    # Repeat each segment value for `seg_dur` steps, then trim to n_steps
+    schedule = np.repeat(seg_values, seg_dur)[:n_steps]
+    return schedule
+
+
+# Pre-built schedule for the default simulation window (t_end, dt defined above)
+# Re-call generate_heating_schedule() if you change t_end or dt.
+_default_n_steps = int(round((t_end - t_start) / dt)) + 1
+heating_schedule = generate_heating_schedule(_default_n_steps)
 
 # ---------------------------------------------------------------------------
 # Alloy number → specific heat (cp) lookup  [example values for common alloys]

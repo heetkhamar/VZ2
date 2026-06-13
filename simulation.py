@@ -23,6 +23,8 @@ run_simulation() from another script.
 """
 
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')          # non-interactive backend – works with no display
 import matplotlib.pyplot as plt
 from collections import deque
 
@@ -101,53 +103,56 @@ class TransportDelay:
 # Main simulation
 # ---------------------------------------------------------------------------
 def run_simulation(
-        t_start: float       = None,
-        t_end: float         = None,
-        dt: float            = None,
-        heating_fraction: float = None,
-        strip_running: bool  = True,
-        strip_speed:   float = None,
-        strip_width:   float = None,
+        t_start: float        = None,
+        t_end: float          = None,
+        dt: float             = None,
+        heating_schedule      = None,   # array [0..1] per time step, or None → use parameters.py default
+        strip_running: bool   = True,
+        strip_speed:   float  = None,
+        strip_width:   float  = None,
         strip_thickness: float = None,
-        T_strip_in: float    = None,
+        T_strip_in: float     = None,
         airknife_druck1: float = None,
         airknife_druck2: float = None,
         water_cooling_power: float = None,
-        T_bath_init: float   = None,
+        T_bath_init: float    = None,
 ):
     """
     Run the tin-bath thermal simulation.
 
     Parameters
     ----------
-    t_start, t_end, dt          : simulation window [s]
-    heating_fraction            : inductive heater demand [0..1]
-    strip_running               : whether steel strip is passing through the bath
-    strip_speed                 : strip speed [m/min]
-    strip_width                 : strip width [mm]
-    strip_thickness             : strip thickness [mm]
-    T_strip_in                  : strip entry temperature [°C]
-    airknife_druck1/2           : air-knife pressures OS / US [mbar]
-    water_cooling_power         : constant water cooling power [W]
-    T_bath_init                 : initial bath temperature [°C]
+    t_start, t_end, dt   : simulation window [s]
+    heating_schedule      : array of heater fractions [0..1], one per time step.
+                            Length must equal n_steps = int((t_end-t_start)/dt)+1.
+                            If None the schedule from parameters.py is used
+                            (regenerated if the simulation window differs).
+    strip_running         : whether steel strip is passing through the bath
+    strip_speed           : strip speed [m/min]
+    strip_width           : strip width [mm]
+    strip_thickness       : strip thickness [mm]
+    T_strip_in            : strip entry temperature [°C]
+    airknife_druck1/2     : air-knife pressures OS / US [mbar]
+    water_cooling_power   : constant water cooling power [W]
+    T_bath_init           : initial bath temperature [°C]
 
     Returns
     -------
     dict with keys:
-        't'           – time array [s]
-        'T_bath'      – bath temperature [°C]
-        'P_heating'   – inductive heating power applied [W]
-        'P_losses'    – radiation + convection losses [W]
-        'P_band'      – strip heat extraction [W]
-        'P_airknife'  – air-knife cooling [W]
-        'P_water'     – water cooling [W]
-        'P_net'       – net power into bath [W]  (= dT/dt * C_B)
+        't'              – time array [s]
+        'T_bath'         – bath temperature [°C]
+        'P_heating'      – inductive heating power applied [W]
+        'heating_frac'   – heater fraction used at each step [0..1]
+        'P_losses'       – radiation + convection losses [W]
+        'P_band'         – strip heat extraction [W]
+        'P_airknife'     – air-knife cooling [W]
+        'P_water'        – water cooling [W]
+        'P_net'          – net power into bath [W]  (= dT/dt * C_B)
     """
-    # --- resolve parameters (fall back to parameters.py defaults) -----------
-    t0   = t_start          if t_start          is not None else p.t_start
-    t1   = t_end            if t_end            is not None else p.t_end
-    step = dt               if dt               is not None else p.dt
-    h_fr = heating_fraction if heating_fraction is not None else p.heating_fraction_default
+    # --- resolve scalar parameters (fall back to parameters.py defaults) ----
+    t0   = t_start if t_start is not None else p.t_start
+    t1   = t_end   if t_end   is not None else p.t_end
+    step = dt      if dt      is not None else p.dt
     v    = strip_speed      if strip_speed      is not None else p.strip_speed
     bw   = strip_width      if strip_width      is not None else p.strip_width
     bt   = strip_thickness  if strip_thickness  is not None else p.strip_thickness
@@ -157,12 +162,28 @@ def run_simulation(
     P_w  = water_cooling_power if water_cooling_power is not None else p.water_cooling_power_default
     T0   = T_bath_init      if T_bath_init      is not None else p.T_bath_init
 
-    # --- clamp heater fraction -----------------------------------------------
-    h_fr = max(0.0, min(1.0, h_fr))
-    P_heat_demand = h_fr * p.P_heating_max      # W
+    # --- resolve / validate heating schedule ---------------------------------
+    n_steps = int(round((t1 - t0) / step)) + 1
 
-    # --- transport delays ----------------------------------------------------
-    delay_heat  = TransportDelay(p.delay_heating,    step, P_heat_demand)
+    if heating_schedule is not None:
+        sched = np.asarray(heating_schedule, dtype=float)
+        if len(sched) != n_steps:
+            raise ValueError(
+                f"heating_schedule length ({len(sched)}) must equal n_steps ({n_steps}). "
+                f"Regenerate with generate_heating_schedule({n_steps}) or adjust t_end/dt."
+            )
+    else:
+        # Use pre-built default or regenerate if window differs
+        if len(p.heating_schedule) == n_steps:
+            sched = p.heating_schedule
+        else:
+            sched = p.generate_heating_schedule(n_steps)
+
+    sched = np.clip(sched, 0.0, 1.0)
+
+    # --- transport delays (initialise delay buffer at first schedule value) --
+    P_heat_demand_init = sched[0] * p.P_heating_max
+    delay_heat  = TransportDelay(p.delay_heating,    step, P_heat_demand_init)
     delay_band  = TransportDelay(p.delay_band,       step, 0.0)
     delay_water = TransportDelay(p.delay_water_cool, step, P_w)
 
@@ -175,6 +196,7 @@ def run_simulation(
     t_arr   = np.linspace(t0, t0 + (n_steps - 1) * step, n_steps)
 
     T_arr       = np.zeros(n_steps)
+    frac_arr    = np.zeros(n_steps)
     P_heat_arr  = np.zeros(n_steps)
     P_loss_arr  = np.zeros(n_steps)
     P_band_arr  = np.zeros(n_steps)
@@ -186,6 +208,9 @@ def run_simulation(
     T = T0
 
     for i in range(n_steps):
+        # Current heater demand from the schedule
+        P_heat_demand = sched[i] * p.P_heating_max
+
         # Delayed heating power reaching the bath
         P_h = delay_heat.step(P_heat_demand)
 
@@ -211,6 +236,7 @@ def run_simulation(
 
         # Store
         T_arr[i]       = T
+        frac_arr[i]    = sched[i]
         P_heat_arr[i]  = P_h
         P_loss_arr[i]  = P_loss
         P_band_arr[i]  = P_band
@@ -219,14 +245,15 @@ def run_simulation(
         P_net_arr[i]   = P_net
 
     return {
-        't':         t_arr,
-        'T_bath':    T_arr,
-        'P_heating': P_heat_arr,
-        'P_losses':  P_loss_arr,
-        'P_band':    P_band_arr,
-        'P_airknife':P_ak_arr,
-        'P_water':   P_water_arr,
-        'P_net':     P_net_arr,
+        't':            t_arr,
+        'T_bath':       T_arr,
+        'heating_frac': frac_arr,
+        'P_heating':    P_heat_arr,
+        'P_losses':     P_loss_arr,
+        'P_band':       P_band_arr,
+        'P_airknife':   P_ak_arr,
+        'P_water':      P_water_arr,
+        'P_net':        P_net_arr,
     }
 
 
@@ -264,13 +291,22 @@ def plot_results(results: dict):
              color='black',      linewidth=1.0, linestyle='-', alpha=0.5)
     ax2.set_ylabel('Leistung [kW]')
     ax2.set_xlabel('Zeit [min]')
-    ax2.legend(loc='upper right', fontsize=8)
+    ax2.legend(loc='upper left', fontsize=8)
     ax2.grid(True, alpha=0.4)
+
+    # Second y-axis: heater fraction [%]
+    ax2r = ax2.twinx()
+    ax2r.step(t_min, results['heating_frac'] * 100, color='tab:red',
+              linewidth=1.0, linestyle='-', alpha=0.6, where='post', label='Heizer-Sollwert [%]')
+    ax2r.set_ylabel('Heizer-Sollwert [%]', color='tab:red')
+    ax2r.tick_params(axis='y', labelcolor='tab:red')
+    ax2r.set_ylim(0, 110)
+    ax2r.legend(loc='upper right', fontsize=8)
 
     plt.tight_layout()
     plt.savefig('simulation_results.png', dpi=150)
+    plt.close()
     print("Plot saved to simulation_results.png")
-    plt.show()
 
 
 # ---------------------------------------------------------------------------
@@ -279,28 +315,33 @@ def plot_results(results: dict):
 if __name__ == '__main__':
 
     # ---- Time ---------------------------------------------------------------
-    SIM_DURATION_HOURS = 1          # hours
-    DT_SECONDS         = 0.1        # integration step [s]
+    SIM_DURATION_HOURS = p.t_end / 3600.0  # p.t_end is in seconds → convert to hours
+    DT_SECONDS         = 1.0               # integration step [s]
 
-    # ---- Inductive heating --------------------------------------------------
-    # Fraction of installed max power (P_heating_max = 7000 W)
-    # 1.0 = full power, 0.0 = off
-    HEATING_FRACTION = 0.75
+    # ---- Inductive heating schedule -----------------------------------------
+    # Build a time-varying schedule: piecewise-constant random fractions.
+    # The schedule has one value per simulation step (length = n_steps).
+    # Edit heating_schedule_* in parameters.py to change the randomness.
+    #
+    # To use a fixed constant instead, replace with:
+    #   HEATING_SCHEDULE = np.full(n_steps, 0.75)
+    n_steps = int(round(SIM_DURATION_HOURS * 3600.0 / DT_SECONDS)) + 1
+    HEATING_SCHEDULE = p.generate_heating_schedule(n_steps)
 
     # ---- Steel strip --------------------------------------------------------
-    STRIP_RUNNING   = True
-    STRIP_SPEED     = 70.0    # m/min
-    STRIP_WIDTH     = 350.0   # mm
-    STRIP_THICKNESS = 0.340     # mm
+    STRIP_RUNNING   = True  # True = strip is running through the bath, False = no strip
+    STRIP_SPEED     = p.strip_speed    # m/min
+    STRIP_WIDTH     = p.strip_width   # m
+    STRIP_THICKNESS = p.strip_thickness     # m
     T_STRIP_ENTRY   = 30.0   # °C – strip temperature entering the bath
 
     # ---- Air knife (Luftmesser) ----------------------------------------------
     # Set both pressures to 0 to disable air-knife cooling
-    AIRKNIFE_DRUCK1 = 300.0   # mbar  (OS – Oberseite)
-    AIRKNIFE_DRUCK2 = 300.0   # mbar  (US – Unterseite)
+    AIRKNIFE_DRUCK1 = p.airknife_druck1_default   # mbar  (OS – Oberseite)
+    AIRKNIFE_DRUCK2 = p.airknife_druck2_default   # mbar  (US – Unterseite)
 
     # ---- Water cooling -------------------------------------------------------
-    WATER_COOLING = 10000.0       # W  (0 = off)
+    WATER_COOLING = p.water_cooling_power_default       # W  (0 = off)
 
     # ---- Initial bath temperature --------------------------------------------
     T_BATH_START = 270.0      # °C
@@ -308,8 +349,9 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
     print("Starting Verzinnungsanlage simulation …")
     print(f"  Duration       : {SIM_DURATION_HOURS} h")
-    print(f"  Heating        : {HEATING_FRACTION * 100:.0f} % of {p.P_heating_max:.0f} W max"
-          f" = {HEATING_FRACTION * p.P_heating_max:.0f} W")
+    print(f"  Heating        : variable schedule ({HEATING_SCHEDULE.min()*100:.0f}–"
+          f"{HEATING_SCHEDULE.max()*100:.0f} %, mean {HEATING_SCHEDULE.mean()*100:.1f} %)"
+          f"  P_max = {p.P_heating_max/1000:.0f} kW")
     print(f"  Strip running  : {STRIP_RUNNING}")
     if STRIP_RUNNING:
         print(f"    Speed        : {STRIP_SPEED} m/min")
@@ -326,7 +368,7 @@ if __name__ == '__main__':
         t_start          = 0.0,
         t_end            = SIM_DURATION_HOURS * 3600.0,
         dt               = DT_SECONDS,
-        heating_fraction = HEATING_FRACTION,
+        heating_schedule = HEATING_SCHEDULE,
         strip_running    = STRIP_RUNNING,
         strip_speed      = STRIP_SPEED,
         strip_width      = STRIP_WIDTH,
