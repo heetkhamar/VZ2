@@ -279,8 +279,8 @@ def plot_results(results: dict):
 if __name__ == '__main__':
 
     # ---- Time ---------------------------------------------------------------
-    SIM_DURATION_HOURS = 2          # hours
-    DT_SECONDS         = 1.0        # integration step [s]
+    SIM_DURATION_HOURS = 1          # hours
+    DT_SECONDS         = 0.1        # integration step [s]
 
     # ---- Inductive heating --------------------------------------------------
     # Fraction of installed max power (P_heating_max = 7000 W)
@@ -289,10 +289,10 @@ if __name__ == '__main__':
 
     # ---- Steel strip --------------------------------------------------------
     STRIP_RUNNING   = True
-    STRIP_SPEED     = 60.0    # m/min
-    STRIP_WIDTH     = 900.0   # mm
-    STRIP_THICKNESS = 0.5     # mm
-    T_STRIP_ENTRY   = 260.0   # °C – strip temperature entering the bath
+    STRIP_SPEED     = 70.0    # m/min
+    STRIP_WIDTH     = 350.0   # mm
+    STRIP_THICKNESS = 0.340     # mm
+    T_STRIP_ENTRY   = 30.0   # °C – strip temperature entering the bath
 
     # ---- Air knife (Luftmesser) ----------------------------------------------
     # Set both pressures to 0 to disable air-knife cooling
@@ -300,10 +300,10 @@ if __name__ == '__main__':
     AIRKNIFE_DRUCK2 = 300.0   # mbar  (US – Unterseite)
 
     # ---- Water cooling -------------------------------------------------------
-    WATER_COOLING = 0.0       # W  (0 = off)
+    WATER_COOLING = 10000.0       # W  (0 = off)
 
     # ---- Initial bath temperature --------------------------------------------
-    T_BATH_START = 264.0      # °C
+    T_BATH_START = 270.0      # °C
 
     # -------------------------------------------------------------------------
     print("Starting Verzinnungsanlage simulation …")
