@@ -536,15 +536,15 @@ def plot_results_comparison(results: dict,
 if __name__ == '__main__':
     import os
 
-    CSV_FILE    = 'sample_data.csv'
+    CSV_FILE    = 'CUSN6_0,4-Ofen1.txt'
     MODE        = 'pid'       # 'pid' or 'open_loop'
     DT_SECONDS  = 1.0
     T_BATH_INIT = None        # None → use first CSV value
 
     if not os.path.exists(CSV_FILE):
-        print(f"'{CSV_FILE}' not found – generating sample data first …")
-        import create_sample_csv
-        create_sample_csv.main()
+        raise FileNotFoundError(
+            f"'{CSV_FILE}' not found. Please add the file to the repository."
+        )
 
     print(f"Running simulation in '{MODE}' mode from '{CSV_FILE}' …")
     results = run_simulation_with_data(
