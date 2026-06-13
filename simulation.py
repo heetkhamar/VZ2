@@ -291,7 +291,6 @@ def plot_results(results: dict):
              color='black',      linewidth=1.0, linestyle='-', alpha=0.5)
     ax2.set_ylabel('Leistung [kW]')
     ax2.set_xlabel('Zeit [min]')
-    ax2.legend(loc='upper left', fontsize=8)
     ax2.grid(True, alpha=0.4)
 
     # Second y-axis: heater fraction [%]
@@ -301,9 +300,16 @@ def plot_results(results: dict):
     ax2r.set_ylabel('Heizer-Sollwert [%]', color='tab:red')
     ax2r.tick_params(axis='y', labelcolor='tab:red')
     ax2r.set_ylim(0, 110)
-    ax2r.legend(loc='upper right', fontsize=8)
+
+    # Merge handles from both axes into one legend below the power plot
+    handles_left,  labels_left  = ax2.get_legend_handles_labels()
+    handles_right, labels_right = ax2r.get_legend_handles_labels()
+    ax2.legend(handles_left + handles_right, labels_left + labels_right,
+               loc='upper center', bbox_to_anchor=(0.5, -0.18),
+               ncol=3, fontsize=8, framealpha=0.9)
 
     plt.tight_layout()
+    plt.subplots_adjust(bottom=0.18)  # make room for the legend below the lower panel
     plt.savefig('simulation_results.png', dpi=150)
     plt.close()
     print("Plot saved to simulation_results.png")
