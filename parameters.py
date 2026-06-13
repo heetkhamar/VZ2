@@ -52,21 +52,21 @@ cp_strip  = 500.0      # J/(kg·K) – mean specific heat of the strip material
                        # (temperature-averaged; exact value depends on alloy)
 
 # Default strip dimensions & speed (can be overridden at runtime)
-strip_width     = 900.0   # mm
+strip_width     = 350.0   # mm
 strip_thickness = 0.5     # mm
 strip_speed     = 60.0    # m/min
 
 # Temperature of the strip entering the bath (below the roller, "unter Rolle").
 # The strip is pre-heated in the annealing furnace and enters the tin bath
 # close to bath temperature.  Typical delta = 5–15 °C below the bath setpoint.
-T_strip_in = 260.0     # °C – strip temperature just before entering the bath
+T_strip_in = T_ambient     # °C – strip temperature just before entering the bath
 
 # ---------------------------------------------------------------------------
 # Transport delays (Transportverzögerungen)
 # ---------------------------------------------------------------------------
-delay_heating     = 94.0  # s – inductive heater → bath (thermal lag in the system)
+delay_heating     = 120.0  # s – inductive heater → bath (thermal lag in the system)
 delay_band        = 5.0   # s – strip-heat calculation → bath integration
-delay_water_cool  = 94.0  # s – water cooling → bath
+delay_water_cool  = dealy_heating  # s – water cooling → bath
 delay_airknife    = 0.0   # s – air-knife cooling → bath (instantaneous)
 
 # ---------------------------------------------------------------------------
@@ -87,11 +87,11 @@ airknife_power_tbl  = [  0, 25000, 26500, 26700, 26900, 26800]  # W
 # Air-knife operating pressures (mbar) used to compute operating state [%]
 # State (%) = 100 * mean_pressure / 600  (clamped 0–100)
 airknife_pressure_min   = 20    # mbar – below this → treated as 0
-airknife_pressure_max   = 600   # mbar – saturation
+airknife_pressure_max   = 700   # mbar – saturation
 
 # Default operating pressures for each air-knife nozzle when running open-loop
-airknife_druck1_default = 300.0  # mbar (OS – Oberseite)
-airknife_druck2_default = 300.0  # mbar (US – Unterseite)
+airknife_druck1_default = 590.0  # mbar (OS – Oberseite)
+airknife_druck2_default = 590.0  # mbar (US – Unterseite)
 
 # ---------------------------------------------------------------------------
 # Water cooling  (Wasserkühlleistung)
@@ -109,7 +109,7 @@ water_cooling_power_default = 0.0  # W – off by default; set > 0 to enable
 #   - Strip heat flow at typical conditions: ~20 000–40 000 W
 #   → total ≈ 70–90 kW  → installed max ~100 kW
 # ---------------------------------------------------------------------------
-P_heating_max = 100_000.0  # W – maximum installed inductive heating power
+P_heating_max = 700_000.0  # W – maximum installed inductive heating power
 
 # Inductive heating fraction [0..1] for open-loop (manual) operation.
 # 0.75 → 75 kW, which roughly balances losses at ~270 °C with strip running.
