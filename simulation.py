@@ -172,18 +172,6 @@ class PIDController:
 
 
 # ---------------------------------------------------------------------------
-# Shared vessel-wall temperature integration (2-node RC model)
-# ---------------------------------------------------------------------------
-def _step_wanne(T_bath, T_innen, T_aussen, dt):
-    Q1 = p.G_tin_inner * (T_bath   - T_innen)
-    Q2 = p.G_wall      * (T_innen  - T_aussen)
-    Q3 = p.G_outer     * (T_aussen - p.T_ambient)
-    T_innen  += (Q1 - Q2) / p.C_wanne_innen  * dt
-    T_aussen += (Q2 - Q3) / p.C_wanne_aussen * dt
-    return T_innen, T_aussen
-
-
-# ---------------------------------------------------------------------------
 # MODE 1 – Manual / open-loop  (heating_schedule array, no CSV)
 # ---------------------------------------------------------------------------
 def run_simulation(
@@ -222,17 +210,15 @@ def run_simulation(
         sched = (p.heating_schedule if len(p.heating_schedule) == n_steps
                  else p.generate_heating_schedule(n_steps))
 
-    t_arr        = np.linspace(t0, t0 + (n_steps - 1) * step, n_steps)
-    T_arr        = np.zeros(n_steps)
-    T_innen_arr  = np.zeros(n_steps)
-    T_aussen_arr = np.zeros(n_steps)
-    frac_arr     = np.zeros(n_steps)
-    P_heat_arr   = np.zeros(n_steps)
-    P_loss_arr   = np.zeros(n_steps)
-    P_band_arr   = np.zeros(n_steps)
-    P_ak_arr     = np.zeros(n_steps)
-    P_water_arr  = np.zeros(n_steps)
-    P_net_arr    = np.zeros(n_steps)
+    t_arr       = np.linspace(t0, t0 + (n_steps - 1) * step, n_steps)
+    T_arr       = np.zeros(n_steps)
+    frac_arr    = np.zeros(n_steps)
+    P_heat_arr  = np.zeros(n_steps)
+    P_loss_arr  = np.zeros(n_steps)
+    P_band_arr  = np.zeros(n_steps)
+    P_ak_arr    = np.zeros(n_steps)
+    P_water_arr = np.zeros(n_steps)
+    P_net_arr   = np.zeros(n_steps)
 
     ak_state = airknife_percent(dk1, dk2)
     P_ak     = lookup1d(p.airknife_state_bp, p.airknife_power_tbl, ak_state)
@@ -241,7 +227,7 @@ def run_simulation(
     delay_band  = TransportDelay(p.delay_band,       step, 0.0)
     delay_water = TransportDelay(p.delay_water_cool, step, P_w)
 
-    T = T0; T_in_w = p.T_wanne_innen_init; T_out_w = p.T_wanne_aussen_init
+    T = T0
 
     for i in range(n_steps):
         P_demand = sched[i] * p.P_heating_max
@@ -252,17 +238,14 @@ def run_simulation(
         P_wc     = delay_water.step(P_w)
         P_net    = P_h - P_loss - P_band - P_ak - P_wc
 
-        T       += (P_net / p.C_B) * step
-        T_in_w, T_out_w = _step_wanne(T, T_in_w, T_out_w, step)
+        T += (P_net / p.C_B) * step
 
-        T_arr[i]        = T;       T_innen_arr[i]  = T_in_w
-        T_aussen_arr[i] = T_out_w; frac_arr[i]     = sched[i]
-        P_heat_arr[i]   = P_h;    P_loss_arr[i]   = P_loss
-        P_band_arr[i]   = P_band; P_ak_arr[i]     = P_ak
-        P_water_arr[i]  = P_wc;   P_net_arr[i]    = P_net
+        T_arr[i]      = T;       frac_arr[i]    = sched[i]
+        P_heat_arr[i] = P_h;    P_loss_arr[i]  = P_loss
+        P_band_arr[i] = P_band; P_ak_arr[i]    = P_ak
+        P_water_arr[i]= P_wc;   P_net_arr[i]   = P_net
 
-    return dict(t=t_arr, T_bath=T_arr, T_wanne_innen=T_innen_arr,
-                T_wanne_aussen=T_aussen_arr, heating_frac=frac_arr,
+    return dict(t=t_arr, T_bath=T_arr, heating_frac=frac_arr,
                 P_heating=P_heat_arr, P_losses=P_loss_arr, P_band=P_band_arr,
                 P_airknife=P_ak_arr, P_water=P_water_arr, P_net=P_net_arr)
 
@@ -302,21 +285,17 @@ def run_simulation_with_data(
     T0 = T_bath_init if T_bath_init is not None else float(data['actual_temp'][0])
 
     # --- Allocate result arrays ---------------------------------------------
-    T_arr         = np.zeros(n_steps)
-    T_innen_arr   = np.zeros(n_steps)
-    T_aussen_arr  = np.zeros(n_steps)
-    frac_arr      = np.zeros(n_steps)   # heater demand fraction (PID or CSV)
-    P_heat_arr    = np.zeros(n_steps)
-    P_loss_arr    = np.zeros(n_steps)
-    P_band_arr    = np.zeros(n_steps)
-    P_ak_arr      = np.zeros(n_steps)
-    P_water_arr   = np.zeros(n_steps)
-    P_net_arr     = np.zeros(n_steps)
+    T_arr       = np.zeros(n_steps)
+    frac_arr    = np.zeros(n_steps)
+    P_heat_arr  = np.zeros(n_steps)
+    P_loss_arr  = np.zeros(n_steps)
+    P_band_arr  = np.zeros(n_steps)
+    P_ak_arr    = np.zeros(n_steps)
+    P_water_arr = np.zeros(n_steps)
+    P_net_arr   = np.zeros(n_steps)
 
     # --- Initialise state ---------------------------------------------------
-    T       = T0
-    T_in_w  = p.T_wanne_innen_init
-    T_out_w = p.T_wanne_aussen_init
+    T = T0
 
     init_frac  = data['oven_power_pct'][0] / 100.0
     init_P     = init_frac * p.P_heating_max
@@ -385,24 +364,18 @@ def run_simulation_with_data(
         P_net = P_h - P_loss - P_band - P_ak - P_w
         T    += (P_net / p.C_B) * dt
 
-        # Vessel wall temperatures (decoupled RC model)
-        T_in_w, T_out_w = _step_wanne(T, T_in_w, T_out_w, dt)
-
         prev_running = running
 
         # Store
-        T_arr[i]        = T;       T_innen_arr[i]  = T_in_w
-        T_aussen_arr[i] = T_out_w; frac_arr[i]     = frac
-        P_heat_arr[i]   = P_h;    P_loss_arr[i]   = P_loss
-        P_band_arr[i]   = P_band; P_ak_arr[i]     = P_ak
-        P_water_arr[i]  = P_w;    P_net_arr[i]    = P_net
+        T_arr[i]      = T;       frac_arr[i]    = frac
+        P_heat_arr[i] = P_h;    P_loss_arr[i]  = P_loss
+        P_band_arr[i] = P_band; P_ak_arr[i]    = P_ak
+        P_water_arr[i]= P_w;    P_net_arr[i]   = P_net
 
     return dict(
-        t              = t_grid,
-        T_bath         = T_arr,
-        T_wanne_innen  = T_innen_arr,
-        T_wanne_aussen = T_aussen_arr,
-        heating_frac   = frac_arr,
+        t            = t_grid,
+        T_bath       = T_arr,
+        heating_frac = frac_arr,
         P_heating      = P_heat_arr,
         P_losses       = P_loss_arr,
         P_band         = P_band_arr,
@@ -431,12 +404,8 @@ def plot_results(results: dict, save_path: str = 'simulation_results.png'):
     fig, axes = plt.subplots(2, 1, figsize=(13, 8), sharex=True)
 
     ax1 = axes[0]
-    ax1.plot(t_min, results['T_bath'],         color='tab:red',    lw=1.8,
+    ax1.plot(t_min, results['T_bath'], color='tab:red', lw=1.8,
              label='Zinnbad-Temperatur')
-    ax1.plot(t_min, results['T_wanne_innen'],  color='tab:orange', lw=1.2,
-             ls='--', label='Wannentemperatur innen')
-    ax1.plot(t_min, results['T_wanne_aussen'], color='tab:blue',   lw=1.2,
-             ls=':', label='Wannentemperatur außen')
     ax1.set_ylabel('Temperatur [°C]')
     ax1.set_title('Verzinnungsanlage – Thermische Simulation (open-loop)')
     ax1.legend(loc='upper right')
@@ -496,16 +465,12 @@ def plot_results_comparison(results: dict,
 
     # --- Panel 1: Temperatures ----------------------------------------------
     ax1 = axes[0]
-    ax1.plot(t_min, results['actual_temp'],     color='tab:green', lw=1.5,
+    ax1.plot(t_min, results['actual_temp'],   color='tab:green', lw=1.5,
              ls='-',  label='Isttemperatur (Messung)')
-    ax1.plot(t_min, results['T_bath'],          color='tab:red',   lw=1.8,
+    ax1.plot(t_min, results['T_bath'],       color='tab:red',   lw=1.8,
              ls='-',  label='Zinnbad-Temperatur (Simulation)')
-    ax1.plot(t_min, results['setpoint_temp'],   color='black',     lw=1.0,
+    ax1.plot(t_min, results['setpoint_temp'],color='black',     lw=1.0,
              ls='--', alpha=0.7, label='Solltemperatur')
-    ax1.plot(t_min, results['T_wanne_innen'],   color='tab:orange',lw=1.0,
-             ls='--', label='Wannentemperatur innen')
-    ax1.plot(t_min, results['T_wanne_aussen'],  color='tab:blue',  lw=1.0,
-             ls=':',  label='Wannentemperatur außen')
     ax1.set_ylabel('Temperatur [°C]')
     ax1.set_title('Verzinnungsanlage – Simulation vs. Messung (PID-Regelung)')
     ax1.legend(loc='upper right', fontsize=8)
