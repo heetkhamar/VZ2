@@ -171,6 +171,60 @@ _default_n_steps = int(round((t_end - t_start) / dt)) + 1
 heating_schedule = generate_heating_schedule(_default_n_steps)
 
 # ---------------------------------------------------------------------------
+# Vessel wall (Wanne) – 2-node thermal model
+# ---------------------------------------------------------------------------
+# The vessel wall is modelled as two thermal nodes:
+#
+#   T_bath ─[G_tin_inner]─ T_wanne_innen ─[G_wall]─ T_wanne_außen ─[G_outer]─ T_ambient
+#
+# Node 1 (innen): inner surface of the steel vessel wall
+# Node 2 (außen): outer surface of the insulation layer
+#
+# Heat flows are computed from bath → inner wall → outer insulation → ambient.
+# These nodes are *observational*: they do not feed back into the bath energy
+# balance (which already accounts for total losses via the lookup table).
+
+# --- Vessel geometry ---------------------------------------------------------
+# Contact area between liquid tin and vessel walls (bottom + 4 sides)
+A_wanne = 2 * (l_B * h_B + b_B * h_B) + l_B * b_B   # m²
+
+# --- Steel vessel wall -------------------------------------------------------
+d_steel      = 0.020    # m   – wall thickness
+lambda_steel = 50.0     # W/(m·K) – thermal conductivity
+rho_steel    = 7800.0   # kg/m³
+cp_steel     = 500.0    # J/(kg·K)
+
+m_wanne_innen = A_wanne * d_steel * rho_steel   # kg – steel wall mass
+C_wanne_innen = m_wanne_innen * cp_steel         # J/K – thermal capacity of inner wall
+
+# --- Insulation layer (außen) ------------------------------------------------
+d_ins      = 0.050      # m   – insulation thickness (50 mm mineral wool)
+lambda_ins = 0.10       # W/(m·K) – thermal conductivity of insulation
+rho_ins    = 200.0      # kg/m³
+cp_ins     = 840.0      # J/(kg·K)
+
+m_wanne_aussen = A_wanne * d_ins * rho_ins   # kg
+C_wanne_aussen = m_wanne_aussen * cp_ins      # J/K
+
+# --- Heat transfer coefficients ----------------------------------------------
+h_tin_to_wall  = 1000.0  # W/(m²·K) – liquid tin → inner steel surface (metal convection)
+h_outer_to_air =   10.0  # W/(m²·K) – outer insulation surface → ambient air
+
+# --- Derived thermal conductances [W/K] --------------------------------------
+# From tin bath to inner wall (convection)
+G_tin_inner = h_tin_to_wall * A_wanne
+
+# Through steel wall + insulation (series conduction)
+G_wall = A_wanne / (d_steel / lambda_steel + d_ins / lambda_ins)
+
+# From outer insulation surface to ambient (convection)
+G_outer = h_outer_to_air * A_wanne
+
+# --- Initial temperatures ----------------------------------------------------
+T_wanne_innen_init = T_bath_init   # °C – starts in thermal equilibrium with bath
+T_wanne_aussen_init = T_ambient    # °C – starts at ambient
+
+# ---------------------------------------------------------------------------
 # Alloy number → specific heat (cp) lookup  [example values for common alloys]
 # In the Simulink model, cp at 20 °C and 400 °C are fetched from a
 # reference table indexed by Bandnummer (strip/alloy number).

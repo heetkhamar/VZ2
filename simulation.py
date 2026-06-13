@@ -195,17 +195,21 @@ def run_simulation(
     n_steps = int(round((t1 - t0) / step)) + 1
     t_arr   = np.linspace(t0, t0 + (n_steps - 1) * step, n_steps)
 
-    T_arr       = np.zeros(n_steps)
-    frac_arr    = np.zeros(n_steps)
-    P_heat_arr  = np.zeros(n_steps)
-    P_loss_arr  = np.zeros(n_steps)
-    P_band_arr  = np.zeros(n_steps)
-    P_ak_arr    = np.zeros(n_steps)
-    P_water_arr = np.zeros(n_steps)
-    P_net_arr   = np.zeros(n_steps)
+    T_arr           = np.zeros(n_steps)
+    T_innen_arr     = np.zeros(n_steps)
+    T_aussen_arr    = np.zeros(n_steps)
+    frac_arr        = np.zeros(n_steps)
+    P_heat_arr      = np.zeros(n_steps)
+    P_loss_arr      = np.zeros(n_steps)
+    P_band_arr      = np.zeros(n_steps)
+    P_ak_arr        = np.zeros(n_steps)
+    P_water_arr     = np.zeros(n_steps)
+    P_net_arr       = np.zeros(n_steps)
 
     # --- initial state -------------------------------------------------------
-    T = T0
+    T         = T0
+    T_innen   = p.T_wanne_innen_init
+    T_aussen  = p.T_wanne_aussen_init
 
     for i in range(n_steps):
         # Current heater demand from the schedule
@@ -234,8 +238,22 @@ def run_simulation(
         dT = (P_net / p.C_B) * step
         T  = T + dT
 
+        # --- Vessel wall temperatures (2-node RC model, decoupled) -----------
+        # Heat flows through the wall path
+        Q_tin_inner   = p.G_tin_inner * (T - T_innen)
+        Q_inner_outer = p.G_wall      * (T_innen - T_aussen)
+        Q_outer_air   = p.G_outer     * (T_aussen - p.T_ambient)
+
+        dT_innen  = (Q_tin_inner - Q_inner_outer) / p.C_wanne_innen * step
+        dT_aussen = (Q_inner_outer - Q_outer_air) / p.C_wanne_aussen * step
+
+        T_innen  = T_innen  + dT_innen
+        T_aussen = T_aussen + dT_aussen
+
         # Store
-        T_arr[i]       = T
+        T_arr[i]        = T
+        T_innen_arr[i]  = T_innen
+        T_aussen_arr[i] = T_aussen
         frac_arr[i]    = sched[i]
         P_heat_arr[i]  = P_h
         P_loss_arr[i]  = P_loss
@@ -245,15 +263,17 @@ def run_simulation(
         P_net_arr[i]   = P_net
 
     return {
-        't':            t_arr,
-        'T_bath':       T_arr,
-        'heating_frac': frac_arr,
-        'P_heating':    P_heat_arr,
-        'P_losses':     P_loss_arr,
-        'P_band':       P_band_arr,
-        'P_airknife':   P_ak_arr,
-        'P_water':      P_water_arr,
-        'P_net':        P_net_arr,
+        't':              t_arr,
+        'T_bath':         T_arr,
+        'T_wanne_innen':  T_innen_arr,
+        'T_wanne_aussen': T_aussen_arr,
+        'heating_frac':   frac_arr,
+        'P_heating':      P_heat_arr,
+        'P_losses':       P_loss_arr,
+        'P_band':         P_band_arr,
+        'P_airknife':     P_ak_arr,
+        'P_water':        P_water_arr,
+        'P_net':          P_net_arr,
     }
 
 
@@ -267,13 +287,16 @@ def plot_results(results: dict):
 
     # --- Temperature plot ---
     ax1 = axes[0]
-    ax1.plot(t_min, results['T_bath'], color='tab:red', linewidth=1.8,
+    ax1.plot(t_min, results['T_bath'],         color='tab:red',    linewidth=1.8,
              label='Zinnbad-Temperatur')
+    ax1.plot(t_min, results['T_wanne_innen'],  color='tab:orange', linewidth=1.2,
+             linestyle='--', label='Wannentemperatur innen')
+    ax1.plot(t_min, results['T_wanne_aussen'], color='tab:blue',   linewidth=1.2,
+             linestyle=':', label='Wannentemperatur außen')
     ax1.set_ylabel('Temperatur [°C]')
     ax1.set_title('Verzinnungsanlage – Thermische Simulation')
     ax1.legend(loc='upper right')
     ax1.grid(True, alpha=0.4)
-    ax1.set_ylim(bottom=200)
 
     # --- Power plot ---
     ax2 = axes[1]
