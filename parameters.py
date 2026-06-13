@@ -111,11 +111,45 @@ water_cooling_power_default = 0.0  # W – off by default; set > 0 to enable
 #   - Strip heat flow at typical conditions: ~20 000–40 000 W
 #   → total ≈ 70–90 kW  → installed max ~100 kW
 # ---------------------------------------------------------------------------
-P_heating_max = 700_000.0  # W – maximum installed inductive heating power
+P_heating_max = 120_000.0  # W – maximum installed inductive heating power (120 kW)
 
 # Inductive heating fraction [0..1] for open-loop (manual) operation.
-# 0.75 → 75 kW, which roughly balances losses at ~270 °C with strip running.
+# 0.75 → 90 kW, which roughly balances losses at ~270 °C with strip running.
 heating_fraction_default = 0.75
+
+# ---------------------------------------------------------------------------
+# Transport delays – mode-dependent  (from Simulink system_1904.xml)
+# ---------------------------------------------------------------------------
+delay_heating_stillstand = 150.0  # s – longer delay when strip is not running
+
+# Minimum strip length in oven before full heating is allowed
+strip_length_min        = 50.0    # m  (korrHeizleistung MATLAB function)
+heating_limit_standstill = 0.20   # max heater fraction during standstill / short strip
+
+# ---------------------------------------------------------------------------
+# PID controller – gain-scheduled by strip speed
+# Source: Simulink 1-D Lookup Tables in system_1349.xml
+#
+# Breakpoints: strip speed [m/s] at 0.3 m/s spacing, 0 → 4.5 m/s (16 pts)
+# Kp  : proportional gain          (P-Anteil)
+# Ti  : integration time [s]       (I-Anteil Zeitdarstellung)
+# Td  : derivative time [s]        (D-Anteil Zeitdarstellung)
+# ---------------------------------------------------------------------------
+pid_speed_bp = [0.0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1,
+                2.4, 2.7, 3.0, 3.3, 3.6, 3.9, 4.2, 4.5]  # m/s
+
+pid_Kp_table = [5.0, 5.2, 5.4, 5.6, 5.8, 6.0, 6.2, 6.4,
+                6.6, 6.8, 7.0, 7.2, 7.4, 7.6, 7.8, 8.0]
+
+pid_Ti_table = [250, 260, 270, 280, 290, 300, 310, 320,
+                330, 340, 350, 360, 370, 380, 390, 400]   # s
+
+pid_Td_table = [60.0, 57.7, 55.6, 53.6, 51.7, 50.0, 48.4, 46.9,
+                45.5, 44.1, 42.9, 41.7, 40.5, 39.5, 38.5, 37.5]  # s
+
+# PID output saturation (heater fraction [0..1])
+pid_output_min = 0.0
+pid_output_max = 1.0
 
 # ---------------------------------------------------------------------------
 # Simulation time settings
