@@ -39,7 +39,7 @@ C_B = m_B * cp_Sn     # J/K – effective thermal capacity of the bath
 # ---------------------------------------------------------------------------
 # Initial condition
 # ---------------------------------------------------------------------------
-T_bath_init = 264.0    # °C – initial tin-bath temperature
+T_bath_init = 280.0    # °C – initial tin-bath temperature
 
 # ---------------------------------------------------------------------------
 # Ambient (Störgröße – disturbance)
@@ -66,10 +66,11 @@ T_strip_in = T_ambient     # °C – strip temperature just before entering the 
 # ---------------------------------------------------------------------------
 # Transport delays (Transportverzögerungen)
 # ---------------------------------------------------------------------------
-delay_heating     = 120.0  # s – inductive heater → bath (thermal lag in the system)
-delay_band        = 5.0   # s – strip-heat calculation → bath integration
+# Values match the Simulink with-data subsystem (system_1904):
+delay_heating     = 200.0   # s – inductive heater → bath (Heizleistung Betrieb)
+delay_band        = 12.0   # s – strip-heat calculation → bath (Bandleistung)
 delay_water_cool  = delay_heating  # s – water cooling → bath
-delay_airknife    = 0.0   # s – air-knife cooling → bath (instantaneous)
+delay_airknife    = 0.0    # s – air-knife cooling → bath (instantaneous)
 
 # ---------------------------------------------------------------------------
 # Heat losses: radiation + convection  (Wärmeverluste Strahlung + Konvektion)
@@ -78,6 +79,7 @@ delay_airknife    = 0.0   # s – air-knife cooling → bath (instantaneous)
 # ---------------------------------------------------------------------------
 loss_temp_bp    = [  0,  250,  260,  270,  280,  290,  300,  310,  320]  # °C
 loss_power_tbl  = [  0, 20500, 22000, 23500, 25000, 27500, 30000, 33000, 37000]  # W
+loss_constant = 95000.0  # W – constant offset (added to the lookup table output)
 
 # ---------------------------------------------------------------------------
 # Air-knife cooling  (Kühlleistung Air knife)
@@ -98,7 +100,7 @@ airknife_druck2_default = 590.0  # mbar (US – Unterseite)
 # ---------------------------------------------------------------------------
 # Water cooling  (Wasserkühlleistung)
 # ---------------------------------------------------------------------------
-water_cooling_power_default = 0.0  # W – off by default; set > 0 to enable
+water_cooling_power_default = 10000.0  # W – off by default; set > 0 to enable
 
 # ---------------------------------------------------------------------------
 # Inductive heating  (Heizleistung)
@@ -111,45 +113,95 @@ water_cooling_power_default = 0.0  # W – off by default; set > 0 to enable
 #   - Strip heat flow at typical conditions: ~20 000–40 000 W
 #   → total ≈ 70–90 kW  → installed max ~100 kW
 # ---------------------------------------------------------------------------
-P_heating_max = 120_000.0  # W – maximum installed inductive heating power (120 kW)
+P_heating_max = 700_000.0  # W – effective bath heating power at 100 % output
+                           # (≠ total electrical power; see furnace_efficiency below)
 
 # Inductive heating fraction [0..1] for open-loop (manual) operation.
 # 0.75 → 90 kW, which roughly balances losses at ~270 °C with strip running.
 heating_fraction_default = 0.75
+
+# Furnace thermal efficiency
+# Fraction of total electrical power (Ofenleistung) that reaches the tin bath.
+# The remainder heats the furnace chamber, structural steel, and surrounding air.
+# Calibrated from ibA data: at steady state Ofenleistung ≈ 200 kW maintains
+# ~270 °C with ~50 kW total bath losses  →  η ≈ 50/200 = 0.25
+# Used in open_loop mode:  P_h_eff = oven_power_W * furnace_efficiency
+furnace_efficiency = 0.9
 
 # ---------------------------------------------------------------------------
 # Transport delays – mode-dependent  (from Simulink system_1904.xml)
 # ---------------------------------------------------------------------------
 delay_heating_stillstand = 150.0  # s – longer delay when strip is not running
 
+# ---------------------------------------------------------------------------
+# Heater → bath thermal lag as a PT1 (first-order lag) element
+# Replaces the pure transport (dead-time) delay on the heating path: the
+# heating power approaches the demand smoothly (τ·dy/dt = u − y) instead of
+# jumping after a fixed dead time. τ is mode-dependent (Betrieb / Stillstand).
+# ---------------------------------------------------------------------------
+tau_heating            = 150.0    # s – PT1 time constant, Betrieb (strip running)
+tau_heating_stillstand = 150.0   # s – PT1 time constant, Stillstand
+
 # Minimum strip length in oven before full heating is allowed
 strip_length_min        = 50.0    # m  (korrHeizleistung MATLAB function)
 heating_limit_standstill = 0.20   # max heater fraction during standstill / short strip
 
 # ---------------------------------------------------------------------------
-# PID controller – gain-scheduled by strip speed
-# Source: Simulink 1-D Lookup Tables in system_1349.xml
+# PID controller – PARALLEL form
 #
-# Breakpoints: strip speed [m/s] at 0.3 m/s spacing, 0 → 4.5 m/s (16 pts)
-# Kp  : proportional gain          (P-Anteil)
-# Ti  : integration time [s]       (I-Anteil Zeitdarstellung)
-# Td  : derivative time [s]        (D-Anteil Zeitdarstellung)
+# Control law (parallel / ideal-parallel form):
+#     u = Kp·e + Ki·∫e dt + Kd·de/dt
+#
+# Gain handling:
+#   Kp : PROPORTIONAL gain – scheduled by the strip MASS FLOW (Massenstrom),
+#        looked up from pid_Kp_table over pid_massflow_bp
+#   Ki : INTEGRAL gain (parallel)   – CONSTANT
+#   Kd : DERIVATIVE gain (parallel) – CONSTANT
+#
+# The time-domain (Zeitbereich) representations are DERIVED from the above:
+#     Ti = Kp / Ki      (integration time  [s])
+#     Td = Kd / Kp      (derivative time   [s])
+# Because Kp is mass-flow-scheduled, Ti and Td vary with the Massenstrom even
+# though Ki and Kd are constant.
 # ---------------------------------------------------------------------------
-pid_speed_bp = [0.0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1,
-                2.4, 2.7, 3.0, 3.3, 3.6, 3.9, 4.2, 4.5]  # m/s
+# Massenstrom breakpoints: 0.0 … 4.5 kg/s in 0.1 kg/s steps (46 points)
+pid_massflow_bp = [round(0.1 * i, 1) for i in range(46)]
 
-pid_Kp_table = [5.0, 5.2, 5.4, 5.6, 5.8, 6.0, 6.2, 6.4,
-                6.6, 6.8, 7.0, 7.2, 7.4, 7.6, 7.8, 8.0]
+# P-Anteil – proportional gain scheduled by Massenstrom [kg/s]
+# Linear ramp Kp = 5.00 + 0.667·Massenstrom (5.00 at 0 kg/s → 8.00 at 4.5 kg/s)
+pid_Kp_table = [
+    5.00, 5.07, 5.13, 5.20, 5.27, 5.33, 5.40, 5.47, 5.53, 5.60,
+    5.67, 5.73, 5.80, 5.87, 5.93, 6.00, 6.07, 6.13, 6.20, 6.27,
+    6.33, 6.40, 6.47, 6.53, 6.60, 6.67, 6.73, 6.80, 6.87, 6.93,
+    7.00, 7.07, 7.13, 7.20, 7.27, 7.33, 7.40, 7.47, 7.53, 7.60,
+    7.67, 7.73, 7.80, 7.87, 7.93, 8.00,
+]
 
-pid_Ti_table = [250, 260, 270, 280, 290, 300, 310, 320,
-                330, 340, 350, 360, 370, 380, 390, 400]   # s
+# Constant parallel-form integral and derivative gains
+pid_Ki = 0.02    # integral gain   (parallel form), constant
+pid_Kd = 300.0   # derivative gain (parallel form), constant
 
-pid_Td_table = [60.0, 57.7, 55.6, 53.6, 51.7, 50.0, 48.4, 46.9,
-                45.5, 44.1, 42.9, 41.7, 40.5, 39.5, 38.5, 37.5]  # s
+# ---------------------------------------------------------------------------
+# Manual PID parameters – ZEITBEREICH (time-domain / standard form)
+# Used when the controller runs in MANUAL mode (PIDController(manual=True)),
+# bypassing the Massenstrom-scheduled table.
+#
+#   u = Kp·( e + (1/Ti)·∫e dt + Td·de/dt )
+#
+# The controller converts these to its internal parallel-form gains:
+#     Ki = Kp / Ti      Kd = Kp · Td
+# ---------------------------------------------------------------------------
+pid_manual_Kp = 6.0      # proportional gain
+pid_manual_Ti = 300.0    # integration time [s]  (Nachstellzeit)
+pid_manual_Td = 50.0     # derivative time  [s]  (Vorhaltzeit)
 
-# PID output saturation (heater fraction [0..1])
+# PID output saturation – PERCENT [0..100], matching the Simulink output scale.
+# The controller output is a heater command in %, converted to a 0..1 fraction
+# (frac = output/100) before scaling by P_heating_max in simulation.py.
+# This gives the table/manual gains (Kp ≈ 5–8) a sensible proportional band
+# (e.g. Kp=6 → full output at ~16 °C error) instead of a 0.16 °C band.
 pid_output_min = 0.0
-pid_output_max = 1.0
+pid_output_max = 100.0
 
 # ---------------------------------------------------------------------------
 # Simulation time settings
