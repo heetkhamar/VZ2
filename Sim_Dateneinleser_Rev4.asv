@@ -1,0 +1,99 @@
+% Einlesen des Datensatzes aus einer Textdatei
+T = readtable('Datensatz_01-Cu-ETP.txt', ...
+    'Delimiter',';', ...                   
+    'ReadVariableNames', true, ...         
+    'VariableNamingRule','modify');        
+head(T)
+
+% 1) Mapping-Dictionary erstellen
+legMap = containers.Map( ...
+    {'CU-ETP','CU-PHC','CUSN4','CUSN5','CUSN6','CUSN6HP','CUSN8','CUSN8HP','CUSN10','CUSN3ZN9','KHP15','KHP102','KHP102M','KHP7025','KHP7026','KHP105','KHP109','C688'}, ...
+    [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18]);
+
+% 2) Neue Spalte anlegen, in der die Zahlen gespeichert werden
+numericLegierung = zeros(height(T),1);
+
+% Fallback-Wert, falls eine unbekannte Legierung gefunden wird
+fallbackValue = 1;
+
+% LetzterWert mit Fallback initialisieren
+letzterWert = fallbackValue;
+
+% Schleife über alle Zeilen der Tabelle
+for i = 1:height(T)
+    currentValue = T.Legierung(i);
+    
+    % Entferne überflüssige Anführungszeichen und Leerzeichen
+    currentValue = strrep(currentValue, '"', '');
+    currentValue = strtrim(currentValue);
+
+    % Prüfen, ob Legierung im Mapping enthalten ist
+    if isKey(legMap, currentValue)
+        letzterWert = legMap(currentValue);
+    else
+        % Falls nicht enthalten:
+        % Option A: Den letzten Wert beibehalten, d.h. nichts tun
+        % Option B: Standardwert erzwingen, z.B.:
+        % letzterWert = fallbackValue;
+        %
+        % Oder Option C: Fehlermeldung werfen:
+        % error("Legierung '%s' ist unbekannt!", currentValue);
+    end
+    
+    % In jedem Fall den aktuellen (letzten gültigen) Wert eintragen
+    numericLegierung(i) = letzterWert;
+end
+
+% 3) Die neue numerische Spalte in die Tabelle schreiben 
+T.Legierung = numericLegierung;
+
+% Unerwünschte Spalte löschen
+T.ChannelInfoFieldText__10_1____PDA_expression__ = [];
+
+% 1) Alle Inf-Werte durch NaN ersetzen
+T{:,:}(isinf(T{:,:})) = NaN;
+
+% 2) Alle NaN-Werte durch den Wert aus der folgenden Zeile ersetzen
+T = fillmissing(T,'next');
+
+head(T)
+
+% Spalten aus der Tabelle T in eigene Variablen übertragen
+time = T.time;
+t_band = T.Banddicke;
+vzst_durchfluss = T.Verzinnungsstation_Durchflussmenge;
+vzst_ruecklauf = T.Verzinnungsstation_R_cklauftemperatur;
+vzst_kuehl = T.Verzinnungsstation_K_hlleistung;
+vzstFU_durchfluss = T.VerzinnungsstationFU_Durchflussmenge;
+vzstFU_ruecklauf = T.VerzinnungsstationFU_R_cklauftemperatur;
+power = T.Ofenleistung;
+temp_wanne_aussen = T.WannentemperaturAu_en;
+temp_wanne_innen = T.WannentemperaturInnen;
+soll_temp = T.SolltemperaturUnterZinnbadrolle;
+b_band = T.Bandbreite;
+airkniveOS = T.AbblasungOSLuftdruck;
+airkniveUS = T.AbblasungUSLuftdruck;
+speed = T.Bandgeschwindigkeit;
+ist_temp_uZR = T.TemperaturUnterZinnbadrolle;
+legierung = T.Legierung;
+l_band = T.Bandl_ngeAufAbhaspel;
+
+% Erstelle Arrays mit je einem Zeit- und einem Wertvektor
+data_time = [time, time];
+data_banddicke = [time, t_band];
+data_vzst_durchfluss = [time, vzst_durchfluss];
+data_vzst_ruecklauf = [time, vzst_ruecklauf];
+data_vzst_kuehl = [time, vzst_kuehl];
+data_vzstFU_durchfluss = [time, vzstFU_durchfluss];
+data_vzstFU_ruecklauf = [time, vzstFU_ruecklauf];
+data_power = [time, power];
+data_wanne_temp_aussen = [time, temp_wanne_aussen];
+data_wanne_temp_innen = [time, temp_wanne_innen];
+data_soll_temp = [time, soll_temp];
+data_bandbreite = [time, b_band];
+data_airkniveOS = [time, airkniveOS];
+data_airkniveUS = [time, airkniveUS];
+data_speed = [time, speed];
+data_ist_temp_uZR = [time, ist_temp_uZR];
+data_legierung = [time, legierung];
+data_bandlaenge = [time, l_band];
