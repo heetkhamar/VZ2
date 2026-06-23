@@ -67,8 +67,8 @@ T_strip_in = T_ambient     # °C – strip temperature just before entering the 
 # Transport delays (Transportverzögerungen)
 # ---------------------------------------------------------------------------
 # Values match the Simulink with-data subsystem (system_1904):
-delay_heating     = 200.0   # s – inductive heater → bath (Heizleistung Betrieb)
-delay_band        = 12.0   # s – strip-heat calculation → bath (Bandleistung)
+delay_heating     = 120.0   # s – inductive heater → bath (Heizleistung Betrieb)
+delay_band        = 120.0   # s – strip-heat calculation → bath (Bandleistung)
 delay_water_cool  = delay_heating  # s – water cooling → bath
 delay_airknife    = 0.0    # s – air-knife cooling → bath (instantaneous)
 
@@ -79,7 +79,7 @@ delay_airknife    = 0.0    # s – air-knife cooling → bath (instantaneous)
 # ---------------------------------------------------------------------------
 loss_temp_bp    = [  0,  250,  260,  270,  280,  290,  300,  310,  320]  # °C
 loss_power_tbl  = [  0, 20500, 22000, 23500, 25000, 27500, 30000, 33000, 37000]  # W
-loss_constant = 95000.0  # W – constant offset (added to the lookup table output)
+loss_constant = -10000.0  # W – constant offset (added to the lookup table output)
 
 # ---------------------------------------------------------------------------
 # Air-knife cooling  (Kühlleistung Air knife)
@@ -126,7 +126,7 @@ heating_fraction_default = 0.75
 # Calibrated from ibA data: at steady state Ofenleistung ≈ 200 kW maintains
 # ~270 °C with ~50 kW total bath losses  →  η ≈ 50/200 = 0.25
 # Used in open_loop mode:  P_h_eff = oven_power_W * furnace_efficiency
-furnace_efficiency = 0.9
+furnace_efficiency = 0.48
 
 # ---------------------------------------------------------------------------
 # Transport delays – mode-dependent  (from Simulink system_1904.xml)
@@ -134,13 +134,16 @@ furnace_efficiency = 0.9
 delay_heating_stillstand = 150.0  # s – longer delay when strip is not running
 
 # ---------------------------------------------------------------------------
-# Heater → bath thermal lag as a PT1 (first-order lag) element
-# Replaces the pure transport (dead-time) delay on the heating path: the
-# heating power approaches the demand smoothly (τ·dy/dt = u − y) instead of
-# jumping after a fixed dead time. τ is mode-dependent (Betrieb / Stillstand).
+# Heater → bath thermal lag as a PT2 (second-order lag) element
+# Replaces the pure transport (dead-time) delay on the heating path. The
+# heating power eases in smoothly with an S-shaped (zero-initial-slope) response
+#     T²·ÿ + 2·D·T·ẏ + y = u
+# T is mode-dependent (Betrieb / Stillstand); D is the damping ratio.
+#   D > 1 overdamped, D = 1 critically damped (no overshoot), D < 1 oscillatory.
 # ---------------------------------------------------------------------------
-tau_heating            = 150.0    # s – PT1 time constant, Betrieb (strip running)
-tau_heating_stillstand = 150.0   # s – PT1 time constant, Stillstand
+tau_heating            = 50.0   # s – PT2 time constant T, Betrieb (strip running)
+tau_heating_stillstand = 150.0   # s – PT2 time constant T, Stillstand
+damping_heating        = 1.5     # – PT2 damping ratio D (1.0 = critically damped)
 
 # Minimum strip length in oven before full heating is allowed
 strip_length_min        = 50.0    # m  (korrHeizleistung MATLAB function)

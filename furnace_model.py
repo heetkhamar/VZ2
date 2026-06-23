@@ -142,3 +142,47 @@ class PT1:
             alpha  = math.exp(-self.dt / self.tau)
             self.y = alpha * self.y + (1.0 - alpha) * u
         return self.y
+
+
+# ---------------------------------------------------------------------------
+# PT2 second-order lag  (Verzögerungsglied 2. Ordnung)
+# ---------------------------------------------------------------------------
+class PT2:
+    """
+    Second-order lag element (steady-state gain 1):
+
+        T²·ÿ + 2·D·T·ẏ + y = u     ⇔     Y(s)/U(s) = 1 / (1 + 2·D·T·s + T²·s²)
+
+    where  T = time constant [s],  D = damping ratio (Dämpfung).
+      D > 1 : overdamped     (no overshoot, two real poles)
+      D = 1 : critically damped (fastest non-overshooting response)
+      D < 1 : underdamped    (overshoot / oscillation)
+
+    Compared with a PT1, the step response starts with **zero slope** (S-shape),
+    so the output eases in and out smoothly rather than rising fastest at t=0.
+
+    State (y, v=ẏ) integrated with a semi-implicit (symplectic) Euler step,
+    which is stable for dt small relative to T (here dt ≪ T, easily satisfied):
+        v += dt · (u − y − 2·D·T·v) / T²
+        y += dt · v
+
+    The time constant T can be changed between steps (e.g. Betrieb vs.
+    Stillstand) via the `tau` attribute.
+    """
+
+    def __init__(self, tau_s: float, damping: float, dt: float, init: float = 0.0):
+        self.tau = tau_s
+        self.D   = damping
+        self.dt  = dt
+        self.y   = init
+        self.v   = 0.0          # ẏ (output rate)
+
+    def step(self, u: float) -> float:
+        if self.tau <= 0.0:
+            self.y = u                      # T=0 → no lag, pass through
+            self.v = 0.0
+        else:
+            acc     = (u - self.y - 2.0 * self.D * self.tau * self.v) / (self.tau * self.tau)
+            self.v += self.dt * acc         # update rate first (semi-implicit)
+            self.y += self.dt * self.v      # then position with the new rate
+        return self.y

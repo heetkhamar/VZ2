@@ -451,8 +451,8 @@ def plot_results_comparison(results: dict,
 if __name__ == '__main__':
     import os
 
-    CSV_FILE    = 'CUSN6_0,4-Ofen1.txt'
-    MODE        = 'pid' # 'pid' or 'open_loop'
+    CSV_FILE    = 'CUSN8_0,2-Ofen1.txt'
+    MODE        = 'open_loop' # 'pid' or 'open_loop'
     DT_SECONDS  = 1
     T_BATH_INIT = p.T_bath_init   # initial bath temperature from parameters.py
                                   # (set to None to start from the first CSV value)
