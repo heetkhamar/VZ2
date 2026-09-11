@@ -1,0 +1,3 @@
+# Python dependencies for the Verzinnungsanlage thermal simulation
+numpy>=1.24
+matplotlib>=3.7
